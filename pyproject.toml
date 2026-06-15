@@ -25,11 +25,13 @@ dependencies = [
     "pandas>=1.3.0",
     "python-dotenv>=0.19.0",
     "keyring>=25.0.0",
+    "mcp[cli]>=1.27,<2",
     "typer>=0.4.0",
 ]
 
 [project.scripts]
 garmingo = "src.main:main"
+garmingo-mcp = "src.mcp_server:main"
 
 [tool.setuptools]
 packages = ["src"]

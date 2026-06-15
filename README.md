@@ -91,13 +91,25 @@ This is the easiest way to get started and export your Garmin data.
    *   In the project folder, find the file named `.env.example`.
    *   **Make a copy** of this file and **rename the copy** to just `.env`.
    *   Open the `.env` file with a text editor (like Notepad or VS Code).
-   *   Find the lines starting with `USER1_` and fill in *only* your Garmin Connect email and password:
+   *   Find the lines starting with `USER1_` and fill in your Garmin Connect email. You can either put your password in `.env`, or store it in your system keyring and reference it from `.env`.
      	 ```dotenv
       	# User Profile 1
       	USER1_GARMIN_EMAIL=your_garmin_email@example.com # <-- Put your email here
       	USER1_GARMIN_PASSWORD=your_garmin_password     # <-- Put your password here
       	USER1_SHEET_ID= # <-- Leave this blank for CSV output
       	```
+
+      To avoid storing the Garmin password in plaintext, store it in your system keyring:
+      ```bash
+      keyring set garmingo your_garmin_email@example.com
+      ```
+
+      Then use this instead of `USER1_GARMIN_PASSWORD`:
+      ```dotenv
+      USER1_GARMIN_EMAIL=your_garmin_email@example.com
+      USER1_GARMIN_PASSWORD_KEYRING=garmingo:your_garmin_email@example.com
+      USER1_SHEET_ID=
+      ```
 
    *   Save the `.env` file. (You can add more `USER<N>_` profiles later if needed).
 
@@ -223,7 +235,7 @@ To send data to Google Sheets, you need to set up Google API credentials.
         *   Copy this ID into the corresponding `USER<N>_SHEET_ID` field in your `.env` file:
           ```dotenv
           USER1_GARMIN_EMAIL=user1@example.com
-          USER1_GARMIN_PASSWORD=password1
+          USER1_GARMIN_PASSWORD_KEYRING=garmingo:user1@example.com
           USER1_SHEET_ID=the_actual_sheet_id_from_google # <-- Add Sheet ID here
           ```
     *   Save the `.env` file.
@@ -246,6 +258,61 @@ To send data to Google Sheets, you need to set up Google API credentials.
     3.  **Enter Dates:** Input start and end dates (`YYYY-MM-DD`).
 6.  **❗First Run Only:** Your web browser will open, asking you to log in to your Google account and grant permission for the app to access your Google Sheets. Allow access. A `token.pickle` file will be created in your `credentials` folder.
 7.  The app will then fetch the data and write it to the specified Google Sheet.
+
+---
+
+## 🔌 Read-Only MCP Server
+
+GarminGo can also run as a local, unofficial read-only Model Context Protocol (MCP) server. This lets MCP-compatible clients query Garmin metrics and activities without writing to Garmin, CSV files, or Google Sheets. The server may write to local SQLite history/cache to reduce repeated Garmin calls.
+
+The MCP server uses the existing GarminGo profile configuration, including `USER<N>_GARMIN_PASSWORD_KEYRING` support. Run the normal CLI interactively once first if Garmin MFA is required, so session tokens are saved locally.
+
+Install dependencies with Python 3.12 or newer and run the server:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python -m src.mcp_server
+```
+
+Core MCP tools:
+
+| Tool | Purpose |
+|---|---|
+| `list_profiles` | List configured profiles without exposing secrets |
+| `get_daily_metrics` | Fetch/cache one day of Garmin health metrics |
+| `get_metrics_range` | Fetch/cache up to 31 days of health metrics |
+| `get_activities` | Fetch/cache raw activity records for up to 90 days |
+| `get_history_status` | Show local SQLite history/cache coverage |
+| `sync_metrics_to_history` | Prefill local SQLite daily metric history |
+| `list_garmin_endpoints` | List read-only Garmin getter endpoints discovered at runtime |
+| `call_garmin_endpoint` | Call a cached read-only `garminconnect.Garmin.get_*` endpoint |
+
+Available MCP resources:
+
+| Resource | Purpose |
+|---|---|
+| `garmin://metrics-schema` | Shows output headers and metric attribute mappings |
+| `garmin://garmin-endpoints` | Shows current runtime Garmin getter endpoint coverage and source references |
+
+Endpoint coverage is discovered from the installed `garminconnect` package at runtime. Prefer `garmin://garmin-endpoints` over copying endpoint lists into documentation.
+
+Example client command configuration:
+
+```json
+{
+  "command": "python",
+  "args": ["-m", "src.mcp_server"],
+  "cwd": "/path/to/jg-garmin-to-sheets"
+}
+```
+
+Upstream references:
+
+* `garminconnect`: active Python Garmin Connect wrapper with README docs, examples, and broad endpoint coverage.
+* `garth`: Garmin auth helper used by this project; the standalone project is deprecated, so GarminGo keeps it behind the local `GarminClient` abstraction.
+* `mcp`: official Python SDK for MCP servers and clients.
 
 ---
 
@@ -340,7 +407,7 @@ Want a metric added? Just raise an Issue and request it!
 
 ## 🔒 Security Notes
 
-*   **Never share or commit your `.env` file** to Git or any public place, as it contains your passwords.
+*   **Never share or commit your `.env` file** to Git or any public place. Prefer `USER<N>_GARMIN_PASSWORD_KEYRING` over plaintext `USER<N>_GARMIN_PASSWORD`.
 *   The `.gitignore` file is already set up to prevent accidental commits of `.env` and the `credentials` folder.
 *   Keep your Google `client_secret.json` file secure.
 
