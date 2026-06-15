@@ -1,5 +1,6 @@
 import typer
 import sys
+from dataclasses import asdict
 from datetime import datetime, timedelta, date
 import asyncio
 from typing import Optional
@@ -8,12 +9,13 @@ import csv
 from pathlib import Path
 from dotenv import load_dotenv, find_dotenv
 import logging
-import re
 
 from src.garmin_client import GarminClient
 from src.sheets_client import GoogleSheetsClient, GoogleAuthTokenRefreshError
 from src.exceptions import MFARequiredException
 from src.config import HEADERS, HEADER_TO_ATTRIBUTE_MAP, GarminMetrics
+from src.profiles import load_user_profiles, resolve_profile_password
+from src.storage import GarminHistoryStore, resolve_sqlite_path
 
 # Suppress noisy library warnings to clean up output
 logging.getLogger('google_auth_oauthlib.flow').setLevel(logging.WARNING)
@@ -22,7 +24,40 @@ logging.getLogger("hpack").setLevel(logging.WARNING)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-app = typer.Typer()
+app = typer.Typer(invoke_without_command=True)
+
+
+def metric_to_dict(metric: GarminMetrics) -> dict:
+    data = asdict(metric)
+    if isinstance(data.get("date"), date):
+        data["date"] = data["date"].isoformat()
+    return data
+
+
+def metric_to_output_row(metric: GarminMetrics) -> dict:
+    row = {}
+    for header in HEADERS:
+        attribute_name = HEADER_TO_ATTRIBUTE_MAP.get(header)
+        value = getattr(metric, attribute_name, None) if attribute_name else None
+        if isinstance(value, date):
+            value = value.isoformat()
+        row[header] = value
+    return row
+
+@app.callback(invoke_without_command=True)
+def app_callback(ctx: typer.Context):
+    """Run the interactive flow when no CLI subcommand is provided."""
+    if ctx.invoked_subcommand is not None:
+        return
+
+    if not sys.stdin.isatty():
+        print("Headless environment detected, but no arguments were provided.")
+        print("Usage: python -m src.main cli-sync --start-date YYYY-MM-DD [--profile USER1]")
+        raise typer.Exit(1)
+
+    print("\nWelcome to GarminGo!")
+    print("Let's help you make data-driven health and longevity decisions by grabbing your Garmin data.")
+    asyncio.run(run_interactive_sync())
 
 async def sync(email: str, password: str, start_date: date, end_date: date, output_type: str, profile_data: dict, profile_name: str = ""):
     """Core sync logic. Fetches data and writes to the specified output."""
@@ -130,35 +165,29 @@ async def sync(email: str, password: str, start_date: date, end_date: date, outp
                 writer.writerow([getattr(metric, HEADER_TO_ATTRIBUTE_MAP.get(h, ""), "") for h in HEADERS])
         logger.info("CSV file sync completed successfully!")
 
-def load_user_profiles():
-    """Parses .env for user profiles, now including SPREADSHEET_NAME."""
-    profiles = {}
-    profile_pattern = re.compile(r"^(USER\d+)_(GARMIN_EMAIL|GARMIN_PASSWORD|SHEET_ID|SHEET_NAME|SPREADSHEET_NAME|CSV_PATH)$")
+    elif output_type == 'sqlite':
+        sqlite_path = resolve_sqlite_path(profile_data)
+        store = GarminHistoryStore(sqlite_path)
+        for metric in metrics_to_write:
+            metric_date = metric.date.isoformat()
+            store.save_daily_metric(
+                profile_name or "USER1",
+                metric_date,
+                metric_to_dict(metric),
+                metric_to_output_row(metric),
+            )
+        logger.info(f"SQLite history sync completed successfully: {sqlite_path}")
 
-    for key, value in os.environ.items():
-        match = profile_pattern.match(key)
-        if match:
-            profile_name, var_type = match.groups()
-            if profile_name not in profiles:
-                profiles[profile_name] = {}
-            
-            key_map = {
-                "GARMIN_EMAIL": "email",
-                "GARMIN_PASSWORD": "password",
-                "SHEET_ID": "sheet_id",
-                "SHEET_NAME": "sheet_name",
-                "SPREADSHEET_NAME": "spreadsheet_name",
-                "CSV_PATH": "csv_path"
-            }
-            profiles[profile_name][key_map[var_type]] = value
-    return profiles
+    else:
+        logger.error("Unsupported output type. Expected 'sheets', 'csv', or 'sqlite'.")
+        sys.exit(1)
 
 @app.command("cli-sync")
 def cli_sync(
     start_date: str = typer.Option(..., help="Start date in YYYY-MM-DD format."),
     end_date: str = typer.Option(None, help="End date in YYYY-MM-DD format. Defaults to start date."),
     profile: str = typer.Option("USER1", help="The user profile from .env to use (e.g., USER1)."),
-    output_type: str = typer.Option("sheets", help="Output type: 'sheets' or 'csv'.")
+    output_type: str = typer.Option("sheets", help="Output type: 'sheets', 'csv', or 'sqlite'.")
 ):
     """Run the Garmin sync from the command line (supports headless/cron use)."""
     date_format = "%Y-%m-%d"
@@ -182,7 +211,7 @@ def cli_sync(
         sys.exit(1)
 
     email = selected_profile_data.get('email')
-    password = selected_profile_data.get('password')
+    password = resolve_profile_password(profile, selected_profile_data)
 
     if not email or not password:
         logger.error(f"Email or password not configured for profile '{profile}'.")
@@ -204,17 +233,20 @@ async def run_interactive_sync():
 
     # Output Type Selection
     output_type = ""
-    while output_type not in ["csv", "sheets"]:
+    while output_type not in ["csv", "sheets", "sqlite"]:
         print("\nData output select:")
         print("1 for local CSV")
         print("2 for Google Sheets")
-        choice = input("Enter choice (1 or 2): ").strip()
+        print("3 for local SQLite history")
+        choice = input("Enter choice (1, 2, or 3): ").strip()
         if choice == '1':
             output_type = "csv"
         elif choice == '2':
             output_type = "sheets"
+        elif choice == '3':
+            output_type = "sqlite"
         else:
-            print("Invalid choice. Please enter 1 or 2.")
+            print("Invalid choice. Please enter 1, 2, or 3.")
 
     logger.info(f"Selected output type: {output_type}")
 
@@ -275,9 +307,14 @@ async def run_interactive_sync():
     logger.info(f"Date range selected: {start_date.strftime(date_format)} to {end_date.strftime(date_format)}")
 
     # Call Core Sync Logic
+    password = resolve_profile_password(selected_profile_name, selected_profile_data)
+    if not selected_profile_data.get('email') or not password:
+        logger.error(f"Email or password not configured for profile '{selected_profile_name}'.")
+        sys.exit(1)
+
     await sync(
         email=selected_profile_data.get('email'),
-        password=selected_profile_data.get('password'),
+        password=password,
         start_date=start_date,
         end_date=end_date,
         output_type=output_type,
@@ -294,19 +331,7 @@ def main():
         logger.warning(".env file not found. Please ensure it's in the root directory.")
     
     try:
-        if len(sys.argv) > 1:
-            # CLI mode: use typer to parse arguments
-            app()
-        elif not sys.stdin.isatty():
-            # Headless environment (e.g. cron) with no arguments — fail clearly
-            print("Headless environment detected, but no arguments were provided.")
-            print("Usage: python -m src.main cli-sync --start-date YYYY-MM-DD [--profile USER1]")
-            sys.exit(1)
-        else:
-            # Interactive mode: run the interactive session
-            print("\nWelcome to GarminGo!")
-            print("Let's help you make data-driven health and longevity decisions by grabbing your Garmin data.")
-            asyncio.run(run_interactive_sync())
+        app()
     except KeyboardInterrupt:
         print("\nOperation cancelled by user.")
         sys.exit(0)

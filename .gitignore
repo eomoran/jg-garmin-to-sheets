@@ -13,6 +13,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.egg-info/
+.DS_Store
 
 # Logs
 logs/
@@ -20,6 +21,7 @@ logs/
 
 # Environment
 .venv/
+.venv*/
 venv/
 ENV/
 build/
