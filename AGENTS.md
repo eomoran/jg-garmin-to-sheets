@@ -19,3 +19,5 @@ For current MCP endpoint coverage, inspect `garmin://garmin-endpoints` or call `
 Prefer SQLite history/cache for repeated analysis. The default database path is `output/garmingo.sqlite3`, overrideable with `GARMINGO_DB_PATH` or `USER<N>_SQLITE_PATH`.
 
 Use `refresh=true` only when live Garmin data is needed. Same-day Garmin values may change throughout the day.
+
+Profile configuration loads from the current checkout `.env`, then `GARMINGO_ENV_FILE` or `~/.garmingo/.env`. Prefer the shared config path for Codex plugin installs that clone the core repo into `~/.garmingo/core`.

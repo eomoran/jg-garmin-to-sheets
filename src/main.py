@@ -4,17 +4,15 @@ from dataclasses import asdict
 from datetime import datetime, timedelta, date
 import asyncio
 from typing import Optional
-import os
 import csv
 from pathlib import Path
-from dotenv import load_dotenv, find_dotenv
 import logging
 
 from src.garmin_client import GarminClient
 from src.sheets_client import GoogleSheetsClient, GoogleAuthTokenRefreshError
 from src.exceptions import MFARequiredException
 from src.config import HEADERS, HEADER_TO_ATTRIBUTE_MAP, GarminMetrics
-from src.profiles import load_user_profiles, resolve_profile_password
+from src.profiles import load_env_files, load_user_profiles, resolve_profile_password
 from src.storage import GarminHistoryStore, resolve_sqlite_path
 
 # Suppress noisy library warnings to clean up output
@@ -324,11 +322,7 @@ async def run_interactive_sync():
 
 def main():
     """Main entry point for the application."""
-    env_file_path = find_dotenv(usecwd=True)
-    if env_file_path:
-        load_dotenv(dotenv_path=env_file_path)
-    else:
-        logger.warning(".env file not found. Please ensure it's in the root directory.")
+    load_env_files()
     
     try:
         app()

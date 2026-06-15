@@ -1,11 +1,29 @@
 import logging
 import os
 import re
+from pathlib import Path
 from typing import Optional
 
 import keyring
+from dotenv import find_dotenv, load_dotenv
 
 logger = logging.getLogger(__name__)
+
+
+def load_env_files() -> None:
+    """Load repo-local and shared GarminGo environment files if present."""
+    cwd_env_file = find_dotenv(usecwd=True)
+    if cwd_env_file:
+        load_dotenv(dotenv_path=cwd_env_file, override=False)
+
+    configured_env_file = os.environ.get("GARMINGO_ENV_FILE")
+    shared_env_file = (
+        Path(configured_env_file).expanduser()
+        if configured_env_file
+        else Path.home() / ".garmingo" / ".env"
+    )
+    if shared_env_file.is_file():
+        load_dotenv(dotenv_path=shared_env_file, override=False)
 
 
 def resolve_profile_password(profile_name: str, profile_data: dict) -> Optional[str]:

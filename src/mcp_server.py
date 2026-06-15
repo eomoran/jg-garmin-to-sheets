@@ -3,14 +3,13 @@ from dataclasses import asdict
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, Optional
 
-from dotenv import find_dotenv, load_dotenv
 from mcp.server.fastmcp import FastMCP
 
 from src.config import HEADERS, HEADER_TO_ATTRIBUTE_MAP
 from src.exceptions import MFARequiredException
 from src.garmin_endpoints import DOC_LINKS, list_read_endpoints, validate_endpoint_arguments, validate_read_endpoint
 from src.garmin_client import GarminClient
-from src.profiles import load_user_profiles, resolve_profile_password
+from src.profiles import load_env_files, load_user_profiles, resolve_profile_password
 from src.storage import GarminHistoryStore, resolve_sqlite_path
 
 MAX_METRIC_RANGE_DAYS = 31
@@ -27,9 +26,7 @@ mcp = FastMCP(
 
 
 def _load_env() -> None:
-    env_file_path = find_dotenv(usecwd=True)
-    if env_file_path:
-        load_dotenv(dotenv_path=env_file_path)
+    load_env_files()
 
 
 def _parse_date(value: str) -> date:

@@ -112,6 +112,7 @@ This is the easiest way to get started and export your Garmin data.
       ```
 
    *   Save the `.env` file. (You can add more `USER<N>_` profiles later if needed).
+   *   For plugin or path-free installs, you can put the same profile variables in `~/.garmingo/.env` instead of the project folder. Set `GARMINGO_ENV_FILE=/path/to/file.env` if you want to use a different shared config file.
 
 **5. ▶️ Run the App & Get CSV:**
    *   Ensure you are in the project's root directory in your terminal (PowerShell, CMD, bash, etc.). If the Python scripts directory was added to your system's PATH during Python installation, you might be able to run `garmingo` from any directory.
@@ -266,6 +267,8 @@ To send data to Google Sheets, you need to set up Google API credentials.
 GarminGo can also run as a local, unofficial read-only Model Context Protocol (MCP) server. This lets MCP-compatible clients query Garmin metrics and activities without writing to Garmin, CSV files, or Google Sheets. The server may write to local SQLite history/cache to reduce repeated Garmin calls.
 
 The MCP server uses the existing GarminGo profile configuration, including `USER<N>_GARMIN_PASSWORD_KEYRING` support. Run the normal CLI interactively once first if Garmin MFA is required, so session tokens are saved locally.
+
+Profile configuration is loaded from the current checkout's `.env`, then from `GARMINGO_ENV_FILE` or `~/.garmingo/.env` for path-free/plugin installs.
 
 Install dependencies with Python 3.12 or newer and run the server:
 
